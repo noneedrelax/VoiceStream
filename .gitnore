@@ -1,0 +1,13 @@
+# Ignore the API key file
+apikey.txt
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+
+# Environment files
+.env
+
+# Other system-specific files
+.DS_Store
+Thumbs.db
