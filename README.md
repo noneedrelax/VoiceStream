@@ -1,43 +1,45 @@
 # VoiceStream
 
-VoiceStream is a lightweight, production-ready voice dictation application for Windows. Leveraging OpenAI's Whisper API for transcription, the tool records audio in memory (avoiding disk I/O) and integrates with the system tray using Pystray and Pillow. Global hotkeys let you quickly start and stop recordings, with transcribed text automatically copied to and pasted from the clipboard.
+VoiceStream is a lightweight, production-ready voice dictation application for Windows. It combines a floating UI with a system tray icon, leveraging OpenAI's Whisper API for transcription. The tool records audio in memory, avoiding disk I/O, and provides global hotkeys for quick operation.
 
 ## Features
 
-- **Real-time Voice Recording:**  
-  Start audio capture with a hotkey or through the system tray.
-  
-- **In-Memory Audio Processing:**  
+- **Floating UI & System Tray Icon:**
+  - A modern, draggable floating bar that's always on top for easy access.
+  - A color-coded status indicator (blue for idle, red for recording, orange for transcribing).
+  - A system tray icon with context menu options (Start, Stop & Transcribe, About/Help, Quit).
+
+- **Real-time Voice Recording:**
+  Start audio capture with a hotkey, the floating UI button, or through the system tray.
+
+- **In-Memory Audio Processing:**
   Audio is captured and processed entirely in memory for speed and efficiency.
 
-- **Accurate Transcription:**  
+- **Accurate Transcription:**
   Uses OpenAI's Whisper API for high-quality speech-to-text conversion.
 
-- **System Tray Integration:**  
-  Modern system tray icon with context menu options for quick access (Start, Stop & Transcribe, About/Help, Quit).
+- **Global Hotkeys:**
+  - `Ctrl+Shift+R` to toggle recording (start/stop).
 
-- **Global Hotkeys:**  
-  - `Ctrl+Shift+R` to start recording.
-  - `Ctrl+Shift+Q` to stop recording and transcribe.
-
-- **Clipboard Integration:**  
+- **Clipboard Integration:**
   Automatically copies and pastes the transcribed text into the active window.
 
-- **Customizable Branding and Help:**  
-  An About/Help section providing your branding and support contact.
+- **Customizable Branding and Help:**
+  An About/Help section providing your branding and support contact, accessible from both the floating UI and the tray icon.
 
 ## Installation
 
 ### Prerequisites
 
-- **Python 3.6+**  
+- **Python 3.6+**
   Ensure Python is installed on your Windows machine.
 
-- **Required Python Packages:**  
+- **Required Python Packages:**
   Install the required packages using pip:
 
   ```bash
   pip install openai pyaudio pystray Pillow keyboard pyperclip
+  ```
 
 ### Setup
 
@@ -53,13 +55,13 @@ Follow these steps to set up and run VoiceStream:
 2. **Configure the API Key:**
 
    - Create a file named `apikey.txt` in the project root.
-   - Paste your valid OpenAI API key into this file.  
+   - Paste your valid OpenAI API key into this file.
      *Example file content:*
      ```
      sk-YourActualAPIKeyHere
      ```
-   
-   > **Important:**  
+
+   > **Important:**
    > Make sure that `apikey.txt` is included in your `.gitignore` file so that it is not committed to the repository.
 
 3. **(Optional) Create a Windows Command-Line Wrapper:**

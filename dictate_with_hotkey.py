@@ -8,6 +8,8 @@ import pyperclip
 import time
 import tkinter as tk
 from tkinter import font as tkfont
+from pystray import Icon, MenuItem as item
+from PIL import Image, ImageDraw, ImageFont
 
 # ------------------------------
 # Configuration & API Key Loading
@@ -23,6 +25,7 @@ CHUNK = 1024
 # Global flags & storage for audio
 RECORDING = False
 FRAMES = []
+tray_icon = None
 
 # ------------------------------
 # In-Memory WAV Buffer Helper
@@ -89,10 +92,21 @@ def stop_recording_and_transcribe():
 # UI (Tkinter)
 # ------------------------------
 class VoiceStreamApp:
-    def __init__(self, root):
+    def __init__(self, root, quit_callback):
         self.root = root
+        self.quit_callback = quit_callback
         self.root.title("VoiceStream")
-        self.root.geometry("200x30")
+        
+        # Calculate position for bottom-right
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        window_width = 200
+        window_height = 30
+        padding = 10
+        x = screen_width - window_width - padding
+        y = screen_height - window_height - padding - 80
+        
+        self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
         self.root.overrideredirect(True) # Remove window decorations
 
         self.always_on_top = tk.BooleanVar(value=True)
@@ -111,7 +125,7 @@ class VoiceStreamApp:
         self.context_menu = tk.Menu(root, tearoff=0)
         self.context_menu.add_command(label="About", command=self.show_about)
         self.context_menu.add_separator()
-        self.context_menu.add_command(label="Quit", command=self.root.quit)
+        self.context_menu.add_command(label="Quit", command=self.quit_callback)
 
         self.root.bind("<Button-3>", self.show_context_menu)
         
@@ -162,8 +176,11 @@ class VoiceStreamApp:
             self.stop_transcribe_ui()
 
     def start_recording_ui(self):
+        global tray_icon
         self.status_canvas.config(bg="red")
         self.record_button.config(text="Stop")
+        if tray_icon:
+            tray_icon.icon = recording_icon_image
         threading.Thread(target=start_recording, daemon=True).start()
 
     def stop_transcribe_ui(self):
@@ -173,7 +190,10 @@ class VoiceStreamApp:
         threading.Thread(target=self.transcribe_and_update_ui, daemon=True).start()
 
     def transcribe_and_update_ui(self):
+        global tray_icon
         stop_recording_and_transcribe()
+        if tray_icon:
+            tray_icon.icon = idle_icon_image
         self.root.after(0, self.reset_ui)
 
     def reset_ui(self):
@@ -181,11 +201,66 @@ class VoiceStreamApp:
         self.record_button.config(text="Record", state=tk.NORMAL)
 
 # ------------------------------
+# Tray Icon Creation (with pystray & Pillow)
+# ------------------------------
+def generate_icon_image(text, bg_color, size=(64, 64)):
+    """Generate an icon image with given text and background color."""
+    image = Image.new('RGB', size, color=bg_color)
+    draw = ImageDraw.Draw(image)
+    try:
+        # Try to use a modern sans-serif font
+        font = ImageFont.truetype("arial.ttf", 20)
+    except Exception:
+        font = ImageFont.load_default()
+    # Use textbbox to calculate text dimensions
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    pos = ((size[0] - text_width) // 2, (size[1] - text_height) // 2)
+    draw.text(pos, text, font=font, fill="white")
+    return image
+
+# Create two icons:
+# - Idle: Blue icon with "Mic" text
+# - Recording: Green icon with "Rec" text
+idle_icon_image = generate_icon_image("Mic", "#2196F3")
+recording_icon_image = generate_icon_image("Rec", "#4CAF50")
+
+def quit_app(icon=None, item=None):
+    if icon:
+        icon.stop()
+    root.quit()
+
+def show_about_tray(icon, item):
+    app.show_about()
+
+def start_recording_wrapper():
+    app.start_recording_ui()
+
+def stop_recording_and_transcribe_wrapper():
+    app.stop_transcribe_ui()
+
+# ------------------------------
 # Main Execution
 # ------------------------------
 if __name__ == "__main__":
     root = tk.Tk()
-    app = VoiceStreamApp(root)
+    app = VoiceStreamApp(root, quit_app)
+    
+    menu = (
+        item('Start Recording', start_recording_wrapper),
+        item('Stop and Transcribe', stop_recording_and_transcribe_wrapper),
+        item('About/Help', show_about_tray),
+        item('Quit', quit_app)
+    )
+    tray_icon = Icon("DictationTool", idle_icon_image, "Dictation Tool", menu)
+
+    def run_tray_icon():
+        tray_icon.run()
+
+    tray_thread = threading.Thread(target=run_tray_icon, daemon=True)
+    tray_thread.start()
+    
     # Start the keyboard listener in a daemon thread.
     threading.Thread(target=lambda: keyboard.wait(), daemon=True).start()
     root.mainloop()
