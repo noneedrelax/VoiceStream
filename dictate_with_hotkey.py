@@ -6,15 +6,13 @@ import threading
 import keyboard
 import pyperclip
 import time
-
-from pystray import Icon, MenuItem as item
-from PIL import Image, ImageDraw, ImageFont
+import tkinter as tk
+from tkinter import font as tkfont
 
 # ------------------------------
 # Configuration & API Key Loading
 # ------------------------------
-with open("apikey.txt", "r") as f:
-    openai.api_key = f.read().strip()
+client = openai.OpenAI(api_key=open("apikey.txt", "r").read().strip())
 
 # Audio settings
 FORMAT = pyaudio.paInt16
@@ -76,8 +74,11 @@ def stop_recording_and_transcribe():
     wav_buffer.seek(0)
 
     # Transcribe using OpenAI Whisper
-    result = openai.Audio.transcribe("whisper-1", wav_buffer)
-    text = result['text']
+    result = client.audio.transcriptions.create(
+        model="whisper-1",
+        file=wav_buffer
+    )
+    text = result.text
 
     # Copy text to clipboard and simulate paste (Ctrl+V)
     pyperclip.copy(text)
@@ -85,85 +86,106 @@ def stop_recording_and_transcribe():
     keyboard.press_and_release('ctrl+v')
 
 # ------------------------------
-# Tray Icon Creation (with pystray & Pillow)
+# UI (Tkinter)
 # ------------------------------
-def generate_icon_image(text, bg_color, size=(64, 64)):
-    """Generate an icon image with given text and background color."""
-    image = Image.new('RGB', size, color=bg_color)
-    draw = ImageDraw.Draw(image)
-    try:
-        # Try to use a modern sans-serif font
-        font = ImageFont.truetype("arial.ttf", 20)
-    except Exception:
-        font = ImageFont.load_default()
-    # Use textbbox to calculate text dimensions
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
-    pos = ((size[0] - text_width) // 2, (size[1] - text_height) // 2)
-    draw.text(pos, text, font=font, fill="white")
-    return image
+class VoiceStreamApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("VoiceStream")
+        self.root.geometry("200x30")
+        self.root.overrideredirect(True) # Remove window decorations
 
-# Create two icons:
-# - Idle: Blue icon with "Mic" text
-# - Recording: Green icon with "Rec" text
-idle_icon_image = generate_icon_image("Mic", "#2196F3")
-recording_icon_image = generate_icon_image("Rec", "#4CAF50")
+        self.always_on_top = tk.BooleanVar(value=True)
+        self.root.attributes("-topmost", True)
+
+        self.status_canvas = tk.Canvas(root, width=20, height=20, bg="blue", highlightthickness=0)
+        self.status_canvas.pack(side=tk.LEFT, padx=5)
+
+        self.record_button = tk.Button(root, text="Record", command=self.toggle_recording)
+        self.record_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+
+        self.pin_button = tk.Button(root, text="Pin", command=self.toggle_always_on_top)
+        self.pin_button.pack(side=tk.LEFT, padx=5)
+
+        # Context menu
+        self.context_menu = tk.Menu(root, tearoff=0)
+        self.context_menu.add_command(label="About", command=self.show_about)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Quit", command=self.root.quit)
+
+        self.root.bind("<Button-3>", self.show_context_menu)
+        
+        # Make window draggable
+        self.root.bind("<ButtonPress-1>", self.start_move)
+        self.root.bind("<ButtonRelease-1>", self.stop_move)
+        self.root.bind("<B1-Motion>", self.do_move)
+
+        # Hotkey
+        keyboard.add_hotkey('ctrl+shift+r', self.toggle_recording)
+
+    def start_move(self, event):
+        self.x = event.x
+        self.y = event.y
+
+    def stop_move(self, event):
+        self.x = None
+        self.y = None
+
+    def do_move(self, event):
+        deltax = event.x - self.x
+        deltay = event.y - self.y
+        x = self.root.winfo_x() + deltax
+        y = self.root.winfo_y() + deltay
+        self.root.geometry(f"+{x}+{y}")
+
+    def show_context_menu(self, event):
+        try:
+            self.context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.context_menu.grab_release()
+
+    def show_about(self):
+        about_window = tk.Toplevel(self.root)
+        about_window.title("About VoiceStream")
+        tk.Label(about_window, text="VoiceStream\n\nDeveloped by Noneedrelax\nContact: noneedrelax@gmail.com", font=("Segoe UI", 12)).pack(padx=20, pady=20)
+        tk.Button(about_window, text="Close", command=about_window.destroy).pack(pady=(0, 20))
+
+    def toggle_always_on_top(self):
+        self.always_on_top.set(not self.always_on_top.get())
+        self.root.attributes("-topmost", self.always_on_top.get())
+        self.pin_button.config(text="Unpin" if self.always_on_top.get() else "Pin")
+
+    def toggle_recording(self):
+        if not RECORDING:
+            self.start_recording_ui()
+        else:
+            self.stop_transcribe_ui()
+
+    def start_recording_ui(self):
+        self.status_canvas.config(bg="red")
+        self.record_button.config(text="Stop")
+        threading.Thread(target=start_recording, daemon=True).start()
+
+    def stop_transcribe_ui(self):
+        self.status_canvas.config(bg="orange")
+        self.record_button.config(text="Record", state=tk.DISABLED)
+        
+        threading.Thread(target=self.transcribe_and_update_ui, daemon=True).start()
+
+    def transcribe_and_update_ui(self):
+        stop_recording_and_transcribe()
+        self.root.after(0, self.reset_ui)
+
+    def reset_ui(self):
+        self.status_canvas.config(bg="blue")
+        self.record_button.config(text="Record", state=tk.NORMAL)
 
 # ------------------------------
-# Tray Icon Menu Command Wrappers
+# Main Execution
 # ------------------------------
-def start_recording_wrapper(tray, _):
-    # Update tray icon and start recording in a thread.
-    tray.icon = recording_icon_image
-    threading.Thread(target=start_recording, daemon=True).start()
-
-def stop_recording_and_transcribe_wrapper(tray, _):
-    # Stop recording and transcribe; then update tray icon back.
-    stop_recording_and_transcribe()
-    tray.icon = idle_icon_image
-
-def quit_app(tray, _):
-    tray.stop()
-
-def show_about(tray, _):
-    import tkinter as tk
+if __name__ == "__main__":
     root = tk.Tk()
-    root.title("About VoiceStream")
-    tk.Label(root, text="VoiceStream\n\nDeveloped by Noneedrelax\nContact: noneedrelax@gmail.com", font=("Segoe UI", 12)).pack(padx=20, pady=20)
-    tk.Button(root, text="Close", command=root.destroy).pack(pady=(0, 20))
+    app = VoiceStreamApp(root)
+    # Start the keyboard listener in a daemon thread.
+    threading.Thread(target=lambda: keyboard.wait(), daemon=True).start()
     root.mainloop()
-
-# ------------------------------
-# Global Hotkeys (Keyboard)
-# ------------------------------
-def start_recording_hotkey():
-    global tray_icon
-    if tray_icon:
-        tray_icon.icon = recording_icon_image
-    threading.Thread(target=start_recording, daemon=True).start()
-
-def stop_recording_and_transcribe_hotkey():
-    global tray_icon
-    stop_recording_and_transcribe()
-    if tray_icon:
-        tray_icon.icon = idle_icon_image
-
-# Register the hotkeys.
-keyboard.add_hotkey('ctrl+shift+r', start_recording_hotkey)
-keyboard.add_hotkey('ctrl+shift+q', stop_recording_and_transcribe_hotkey)
-# Start the keyboard listener in a daemon thread.
-threading.Thread(target=lambda: keyboard.wait(), daemon=True).start()
-
-# ------------------------------
-# Create & Run Tray Icon
-# ------------------------------
-menu = (
-    item('Start Recording', start_recording_wrapper),
-    item('Stop and Transcribe', stop_recording_and_transcribe_wrapper),
-    item('About/Help', show_about),
-    item('Quit', quit_app)
-)
-
-tray_icon = Icon("DictationTool", idle_icon_image, "Dictation Tool", menu)
-tray_icon.run()
